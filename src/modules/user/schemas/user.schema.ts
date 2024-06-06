@@ -43,38 +43,11 @@ export class User extends Document implements IUser {
   @Prop({ type: [String], default: [] })
   refreshTokens: string[];
 
-  // Comparing password with stored hash
-  async comparePassword(candidate: string): Promise<boolean> {
-    return compare(candidate, this.password);
-  }
+  comparePassword: (candidate: string) => Promise<boolean>;
+  addRefreshToken: (refreshToken: string) => Promise<void>;
+  removeRefreshToken: (refreshToken: string) => Promise<void>;
+  validateRefreshToken: (refreshToken: string) => Promise<boolean>;
 
-  // Adding new refresh token by hashing
-  async addRefreshToken(refreshToken: string): Promise<void> {
-    const salt = await genSalt(10);
-    const hashedRefreshToken = await hash(refreshToken, salt);
-    this.refreshTokens.push(hashedRefreshToken);
-    await this.save();
-  }
-
-  // Removing specific refresh token
-  async removeRefreshToken(refreshToken: string): Promise<void> {
-    this.refreshTokens = await Promise.all(
-      this.refreshTokens.filter(
-        async (token) => !(await compare(refreshToken, token)),
-      ),
-    );
-    await this.save();
-  }
-
-  // Validating refresh token from stored tokens
-  async validateRefreshToken(refreshToken: string): Promise<boolean> {
-    for (const token of this.refreshTokens) {
-      if (await compare(refreshToken, token)) {
-        return true;
-      }
-    }
-    return false;
-  }
 }
 
 // Create the User schema for Mongoose
@@ -96,3 +69,35 @@ UserSchema.set('toObject', {
     delete ret.__v;
   },
 });
+
+UserSchema.methods.comparePassword = async function(candidate: string): Promise<boolean> {
+  return compare(candidate, this.password);
+};
+
+UserSchema.methods.addRefreshToken = async function(refreshToken: string): Promise<void> {
+  const salt = await genSalt(10);
+  const hashedRefreshToken = await hash(refreshToken, salt);
+  this.refreshTokens.push(hashedRefreshToken);
+  await this.save();
+};
+
+UserSchema.methods.removeRefreshToken = async function(refreshToken: string): Promise<void> {
+  const updatedTokens = [];
+  for (const storedToken of this.refreshTokens) {
+    const isMatch = await compare(refreshToken, storedToken);
+    if (!isMatch) {
+      updatedTokens.push(storedToken);
+    }
+  }
+  this.refreshTokens = updatedTokens;
+  await this.save();
+};
+
+UserSchema.methods.validateRefreshToken = async function(refreshToken: string): Promise<boolean> {
+  for (const token of this.refreshTokens) {
+    if (await compare(refreshToken, token)) {
+      return true;
+    }
+  }
+  return false;
+};
